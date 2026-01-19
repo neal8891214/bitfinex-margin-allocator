@@ -7,6 +7,7 @@
 - Python 3.9 需使用 `Dict[str, float]` 而非 `dict[str, float]`
 - mypy 需要 `types-PyYAML` stub 才能通過 yaml 模組的類型檢查
 - Pydantic 2.x 的 `@computed_field` + `@property` 需加上 `# type: ignore[prop-decorator]` 以通過 mypy
+- websockets 15.x 的 WebSocket 連線物件使用 `Any` 類型註解以避免 mypy 錯誤（不同版本 API 差異）
 
 ---
 
@@ -224,4 +225,27 @@
   - 保證金率警告使用 _margin_warning_sent 狀態避免重複發送
   - 價格急漲急跌偵測使用 _price_cache 追蹤前一價格，支援顯式傳入 prev_price
   - 閾值比較使用「小於」而非「小於等於」（等於閾值不觸發）
+---
+
+## 2026-01-19 - US-012
+- **What was implemented**: WebSocket Client 模組
+  - 使用 websockets 庫實作 BitfinexWebSocket 類別
+  - 實作 connect() 建立 WebSocket 連線
+  - 實作 subscribe() 和 unsubscribe() 管理頻道訂閱
+  - 實作智慧訂閱 _is_high_risk()：只監控保證金率低於 emergency_margin_rate * 2 的高風險倉位
+  - 實作 update_subscriptions() 根據當前倉位風險動態調整訂閱列表
+  - 實作 on_message() 註冊價格更新回調
+  - 實作 _handle_message() 解析 Bitfinex WebSocket ticker 訊息格式
+  - 實作自動重連機制 _reconnect()：斷線後指數退避重連，最多 10 次
+  - 實作 start() 非阻塞監聽和 close() 優雅關閉
+  - 29 個測試全部通過
+- **Files changed**:
+  - src/api/bitfinex_ws.py (new)
+  - tests/test_bitfinex_ws.py (new)
+- **Learnings for future iterations:**
+  - websockets 15.x 版本的 WebSocket 連線物件類型與早期版本不同，使用 `Any` 避免類型衝突
+  - WebSocket 訊息可能是 str 或 bytes，需在 _handle_message 中處理兩種情況
+  - Bitfinex ticker 格式：`[CHANNEL_ID, [BID, BID_SIZE, ASK, ASK_SIZE, DAILY_CHANGE, DAILY_CHANGE_PERC, LAST_PRICE, VOLUME, HIGH, LOW]]`
+  - 心跳訊息格式為 `[CHANNEL_ID, "hb"]`，需特別過濾
+  - 智慧訂閱使用 `emergency_margin_rate * 2` 作為高風險判斷閾值
 ---
