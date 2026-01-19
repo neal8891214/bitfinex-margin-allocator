@@ -205,3 +205,23 @@
   - 使用 `asyncio.CancelledError` 處理 task 取消時的例外
   - 測試輪詢迴圈時使用小的間隔和 sleep 配合 start/stop
 ---
+
+## 2026-01-19 - US-011
+- **What was implemented**: Event Detector 模組
+  - 實作 EventDetector 類別，監控緊急事件並即時反應
+  - 實作 check_emergency_conditions() 檢查是否有倉位低於 emergency_margin_rate
+  - 實作 on_price_update() 偵測價格急漲急跌（超過 price_spike_pct）
+  - 實作 check_account_margin_rate() 監控帳戶整體保證金率
+  - 實作 handle_emergency() 觸發緊急重平衡並通知
+  - 實作 handle_account_margin_warning() 發送帳戶保證金率警告
+  - 實作價格快取機制和警告狀態追蹤（避免重複警告）
+  - 26 個測試全部通過
+- **Files changed**:
+  - src/scheduler/event_detector.py (new)
+  - tests/test_event_detector.py (new)
+- **Learnings for future iterations:**
+  - EventDetector 依賴 MarginAllocator 和 TelegramNotifier，使用 TYPE_CHECKING 避免循環導入
+  - 保證金率警告使用 _margin_warning_sent 狀態避免重複發送
+  - 價格急漲急跌偵測使用 _price_cache 追蹤前一價格，支援顯式傳入 prev_price
+  - 閾值比較使用「小於」而非「小於等於」（等於閾值不觸發）
+---
