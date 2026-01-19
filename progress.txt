@@ -1,0 +1,187 @@
+## Codebase Patterns
+- Python 版本需求已從 3.11+ 調整為 3.9+ 以支援更多環境
+- 使用 hatchling 作為 build backend，需在 pyproject.toml 中配置 `tool.hatch.build.targets.wheel.packages`
+- 執行 mypy 類型檢查：`python3 -m mypy src/`
+- logs/ 和 data/ 目錄在 .gitignore 中，不會被追蹤
+- Python 3.9 不支援 `str | Path` 語法，需使用 `Union[str, Path]` 替代
+- Python 3.9 需使用 `Dict[str, float]` 而非 `dict[str, float]`
+- mypy 需要 `types-PyYAML` stub 才能通過 yaml 模組的類型檢查
+- Pydantic 2.x 的 `@computed_field` + `@property` 需加上 `# type: ignore[prop-decorator]` 以通過 mypy
+
+---
+
+## 2026-01-19 - US-001
+- **What was implemented**: 專案初始化與基礎結構
+  - 建立目錄結構：config/, src/, tests/, logs/, data/
+  - 建立 src 子目錄：api/, core/, scheduler/, notifier/, storage/
+  - 建立 pyproject.toml 包含所有依賴
+  - 建立 requirements.txt 供快速安裝
+  - 建立 config/config.example.yaml 範例配置檔（含所有必要區塊）
+  - 所有模組目錄包含 __init__.py
+- **Files changed**:
+  - config/config.example.yaml (new)
+  - pyproject.toml (new)
+  - requirements.txt (new)
+  - src/__init__.py (new)
+  - src/api/__init__.py (new)
+  - src/core/__init__.py (new)
+  - src/notifier/__init__.py (new)
+  - src/scheduler/__init__.py (new)
+  - src/storage/__init__.py (new)
+  - tests/__init__.py (new)
+- **Learnings for future iterations:**
+  - hatchling 需要明確指定 packages 路徑（src 目錄）才能正確建置
+  - 系統 Python 為 3.9.6，需使用 `python3` 而非 `python` 執行命令
+  - 空目錄可用 .gitkeep 保留，但 logs/ 和 data/ 已在 .gitignore 中
+---
+
+## 2026-01-19 - US-002
+- **What was implemented**: Config Manager 模組
+  - 使用 Pydantic 定義配置模型：BitfinexConfig, TelegramConfig, MonitorConfig, ThresholdsConfig, LiquidationConfig, DatabaseConfig, LoggingConfig
+  - 實作 Config 主模型整合所有子配置
+  - 實作 ${ENV_VAR} 環境變數替換（遞迴處理 dict 和 list）
+  - 實作 get_risk_weight(symbol) 回傳配置的權重或 None
+  - 實作 get_position_priority(symbol) 回傳優先級，未配置則使用 default 值
+  - 實作 load_config(path) 函數載入 YAML 並驗證
+- **Files changed**:
+  - src/config_manager.py (new)
+  - tests/test_config_manager.py (new)
+  - pyproject.toml (modified - 新增 types-PyYAML dev 依賴)
+- **Learnings for future iterations:**
+  - Python 3.9 不支援 PEP 604 union type syntax（`str | Path`），需用 `Union[str, Path]`
+  - Python 3.9 不支援 built-in generic types（`dict[str, float]`），需用 `Dict[str, float]`
+  - yaml 模組需要 types-PyYAML stub 才能通過 mypy 檢查
+---
+
+## 2026-01-19 - US-003
+- **What was implemented**: Data Models 模組
+  - 定義 PositionSide enum：LONG, SHORT
+  - 定義 AdjustmentDirection enum：INCREASE, DECREASE
+  - 定義 TriggerType enum：SCHEDULED, EMERGENCY
+  - 實作 Position 模型：symbol, side, quantity, entry_price, current_price, margin, leverage, unrealized_pnl, margin_rate
+  - Position 提供 computed fields：notional_value, is_profitable
+  - 實作 MarginAdjustment 模型
+  - 實作 Liquidation 模型
+  - 實作 AccountSnapshot 模型
+- **Files changed**:
+  - src/storage/models.py (new)
+  - tests/test_models.py (new)
+- **Learnings for future iterations:**
+  - Pydantic 2.x 的 `@computed_field` 和 `@property` 裝飾器堆疊會觸發 mypy 的 `prop-decorator` 錯誤，需加上 `# type: ignore[prop-decorator]`
+  - Python 3.9 需使用 `Optional[int]` 而非 `int | None`，`List[Dict[str, Any]]` 而非 `list[dict[str, Any]]`
+---
+
+## 2026-01-19 - US-004
+- **What was implemented**: Database 模組
+  - 使用 aiosqlite 實作非同步 Database 類別
+  - initialize() 自動建立表：margin_adjustments, liquidations, account_snapshots（含索引）
+  - 實作 save_margin_adjustment() 和 get_margin_adjustments(limit, symbol)
+  - 實作 save_liquidation() 和 get_liquidations(limit)
+  - 實作 save_account_snapshot() 和 get_account_snapshots(limit)
+  - 實作 get_daily_stats(date) 回傳統計資料
+  - 實作 get_tables() 和 close()
+- **Files changed**:
+  - src/storage/database.py (new)
+  - tests/test_database.py (new)
+- **Learnings for future iterations:**
+  - aiosqlite 的 cursor.lastrowid 可能回傳 None，需處理此情況（使用 `or 0`）
+  - Database 類別中使用 `assert self._conn is not None` 來滿足 mypy 對 Optional 類型的檢查
+  - pytest-asyncio 的 fixture 使用 `@pytest_asyncio.fixture` 裝飾器
+---
+
+## 2026-01-19 - US-005
+- **What was implemented**: Bitfinex REST API Client 模組
+  - 實作 BitfinexClient 類別（含 aiohttp session 管理）
+  - 實作 _generate_signature() 使用 HMAC SHA384
+  - 實作 _request() 發送已認證請求（含指數退避重試機制，最多 10 次）
+  - 實作 _request_public() 發送公開請求
+  - 實作 _parse_position() 解析 Bitfinex 衍生品倉位格式為 Position 模型
+  - 實作 get_positions() 取得所有 ACTIVE 衍生品倉位
+  - 實作 get_derivatives_balance() 取得 deriv wallet 的 UST/USDt 可用餘額
+  - 實作 update_position_margin() 調整倉位保證金
+  - 實作 close_position() 市價平倉
+  - 實作 get_candles() 取得 K 線資料
+  - 實作 get_full_symbol() 將 'BTC' 轉換為 'tBTCF0:USTF0'
+  - 定義 BitfinexAPIError 自訂例外類別
+- **Files changed**:
+  - src/api/bitfinex_client.py (new)
+  - tests/test_bitfinex_client.py (new)
+- **Learnings for future iterations:**
+  - SHA384 的 hex digest 長度為 96 字元（不是 128）
+  - Bitfinex K 線資料格式：[timestamp, open, close, high, low, volume]，注意 close 在 index 2
+  - API 重試機制：使用 aiohttp.ClientError 捕捉網路錯誤，指數退避延遲 2^attempt 秒
+---
+
+## 2026-01-19 - US-006
+- **What was implemented**: Risk Calculator 模組
+  - 實作 RiskCalculator 類別，計算波動率與風險權重
+  - 實作 _calculate_volatility(prices) 計算價格序列的標準差，使用 numpy
+  - 實作 _fetch_volatility(symbol) 從 API 取得歷史價格並計算波動率
+  - 實作 get_risk_weight(symbol) 優先回傳配置值，否則自動計算（以 BTC 波動率為基準正規化）
+  - 實作 calculate_target_margins(positions, total_margin) 根據風險權重計算各倉位目標保證金
+  - 實作波動率快取機制（_volatility_cache dict）與 clear_cache()
+- **Files changed**:
+  - src/core/risk_calculator.py (new)
+  - tests/test_risk_calculator.py (new)
+- **Learnings for future iterations:**
+  - numpy 的 np.diff() 和 np.std() 用於計算報酬率和波動率
+  - 風險權重自動計算：以 BTC 波動率為基準進行正規化（volatility / btc_volatility）
+  - TYPE_CHECKING 用於避免循環導入：`if TYPE_CHECKING:` 區塊中的 import 只在類型檢查時執行
+---
+
+## 2026-01-19 - US-007
+- **What was implemented**: Margin Allocator 模組
+  - 定義 MarginAdjustmentPlan dataclass：symbol, current_margin, target_margin, delta, is_increase property
+  - 定義 RebalanceResult dataclass：success_count, fail_count, total_adjusted, adjustments
+  - 實作 _calculate_adjustment_plans(positions, targets) 過濾低於 min_adjustment_usdt 和 min_deviation_pct 的調整
+  - 實作 _sort_plans(plans) 先減少（釋放資金）再增加（使用資金）
+  - 實作 execute_rebalance(positions, total_margin, trigger_type) 執行重平衡並記錄到 DB
+  - 實作 emergency_rebalance(positions, critical_position, available_balance) 緊急補充保證金
+- **Files changed**:
+  - src/core/margin_allocator.py (new)
+  - tests/test_margin_allocator.py (new)
+- **Learnings for future iterations:**
+  - MarginAllocator 依賴 RiskCalculator、BitfinexClient 和 Database，使用 TYPE_CHECKING 避免循環導入
+  - 重平衡策略：先減少保證金（釋放資金），再增加保證金（使用資金），確保有足夠餘額執行增加操作
+  - 緊急重平衡目標：將保證金率提升到 emergency_margin_rate 的 2 倍
+---
+
+## 2026-01-19 - US-008
+- **What was implemented**: Position Liquidator 模組
+  - 定義 LiquidationPlan dataclass：symbol, side, current_quantity, close_quantity, current_price, estimated_release
+  - 定義 LiquidationResult dataclass：executed, reason, plans, success_count, fail_count, total_released
+  - 實作 _calculate_margin_gap(positions, available_balance) 計算保證金缺口
+  - 實作 _sort_by_priority(positions) 按 position_priority 排序（低優先級在前，優先被減倉）
+  - 實作 _create_liquidation_plan(position, needed_release) 限制 max_single_close_pct
+  - 實作 _check_cooldown() 檢查是否在冷卻期內
+  - 實作 execute_if_needed(positions, available_balance) 檢查並執行減倉
+  - 支援 dry_run 模式：計算計畫但不實際執行
+  - 每次減倉記錄到資料庫
+- **Files changed**:
+  - src/core/position_liquidator.py (new)
+  - tests/test_position_liquidator.py (new)
+- **Learnings for future iterations:**
+  - dataclass 的 `default_factory` 用於可變預設值（如 `Decimal("0")`）
+  - 保證金缺口計算：最低安全保證金 = 名義價值 × 維護保證金率(0.5%) × 安全係數
+  - 減倉優先級策略：低優先級倉位優先被減倉，保護高優先級資產
+---
+
+## 2026-01-19 - US-009
+- **What was implemented**: Telegram Notifier 模組
+  - 實作 TelegramNotifier 類別，使用 python-telegram-bot 庫
+  - 實作 send_message() 發送一般訊息（支援 HTML 格式）
+  - 實作 send_adjustment_report() 發送保證金調整報告
+  - 實作 send_liquidation_alert() 發送減倉警告
+  - 實作 send_daily_report() 發送每日統計報告
+  - 實作 send_api_error_alert() 發送 API 重試失敗報警
+  - 實作 send_account_margin_warning() 發送帳戶保證金率預警
+  - 當 enabled=False 時所有方法為 no-op
+- **Files changed**:
+  - src/notifier/telegram_bot.py (new)
+  - tests/test_telegram_bot.py (new)
+- **Learnings for future iterations:**
+  - python-telegram-bot 庫使用 `telegram.Bot` 類別，`send_message()` 是 async 方法
+  - 使用 `parse_mode="HTML"` 支援 HTML 格式訊息，如 `<b>粗體</b>`
+  - 測試時使用 `@patch("src.notifier.telegram_bot.Bot")` mock Bot 類別
+  - TelegramError 是所有 Telegram API 錯誤的基類
+---
