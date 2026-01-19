@@ -1,0 +1,288 @@
+{
+  "project": "Bitfinex Margin Balancer",
+  "branchName": "ralph/bitfinex-margin-balancer",
+  "description": "Python 服務：在 Bitfinex 逐倉模式下模擬全倉保證金行為，支援風險權重動態分配與自動減倉",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "專案初始化與基礎結構",
+      "description": "As a 開發者, I want 建立標準化的 Python 專案結構 so that 後續開發有清晰的模組劃分",
+      "acceptanceCriteria": [
+        "建立目錄結構：config/, src/, tests/, logs/, data/",
+        "建立 src/api/, src/core/, src/scheduler/, src/notifier/, src/storage/ 子目錄",
+        "建立 pyproject.toml 包含依賴：aiohttp>=3.9.0, websockets>=12.0, pydantic>=2.5.0, pydantic-settings>=2.1.0, PyYAML>=6.0, python-telegram-bot>=20.7, aiosqlite>=0.19.0, numpy>=1.26.0",
+        "建立 requirements.txt 供快速安裝",
+        "建立 config/config.example.yaml 範例配置檔（含 bitfinex, telegram, monitor, thresholds, risk_weights, position_priority, liquidation, database, logging 區塊）",
+        "所有模組目錄包含 __init__.py",
+        "Git repository 初始化完成"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Config Manager 模組",
+      "description": "As a 服務, I want 從 YAML 配置檔載入設定並支援環境變數替換 so that 敏感資訊（API keys）不需硬編碼",
+      "acceptanceCriteria": [
+        "實作 src/config_manager.py",
+        "使用 Pydantic 定義配置模型：BitfinexConfig, TelegramConfig, MonitorConfig, ThresholdsConfig, LiquidationConfig, DatabaseConfig, LoggingConfig",
+        "實作 Config 主模型整合所有子配置",
+        "支援 ${ENV_VAR} 語法的環境變數替換（遞迴處理 dict 和 list）",
+        "實作 get_risk_weight(symbol) 回傳配置的權重或 None",
+        "實作 get_position_priority(symbol) 回傳優先級，未配置則使用 default 值",
+        "實作 load_config(path) 函數載入 YAML 並驗證",
+        "測試 tests/test_config_manager.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Data Models 模組",
+      "description": "As a 開發者, I want 定義統一的資料模型 so that 各模組間的資料傳遞有型別保障",
+      "acceptanceCriteria": [
+        "實作 src/storage/models.py",
+        "定義 PositionSide enum：LONG, SHORT",
+        "定義 AdjustmentDirection enum：INCREASE, DECREASE",
+        "定義 TriggerType enum：SCHEDULED, EMERGENCY",
+        "實作 Position 模型：symbol, side, quantity, entry_price, current_price, margin, leverage, unrealized_pnl, margin_rate",
+        "Position 提供 computed fields：notional_value (quantity * current_price), is_profitable (unrealized_pnl > 0)",
+        "實作 MarginAdjustment 模型：id, timestamp, symbol, direction, amount, before_margin, after_margin, trigger_type",
+        "實作 Liquidation 模型：id, timestamp, symbol, side, quantity, price, released_margin, reason",
+        "實作 AccountSnapshot 模型：id, timestamp, total_equity, total_margin, available_balance, positions_json",
+        "測試 tests/test_models.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Database 模組",
+      "description": "As a 服務, I want 將操作歷史儲存到 SQLite so that 可以事後查詢和分析",
+      "acceptanceCriteria": [
+        "實作 src/storage/database.py",
+        "使用 aiosqlite 實作非同步 Database 類別",
+        "initialize() 自動建立表：margin_adjustments, liquidations, account_snapshots（含索引）",
+        "實作 save_margin_adjustment() 和 get_margin_adjustments(limit, symbol)",
+        "實作 save_liquidation() 和 get_liquidations(limit)",
+        "實作 save_account_snapshot() 和 get_account_snapshots(limit)",
+        "實作 get_daily_stats(date) 回傳 {adjustment_count, liquidation_count}",
+        "實作 get_tables() 回傳所有表名（用於測試）",
+        "實作 close() 關閉連線",
+        "測試 tests/test_database.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Bitfinex REST API Client 模組",
+      "description": "As a 服務, I want 透過 Bitfinex REST API 取得帳戶資訊並執行操作 so that 可以監控和管理倉位",
+      "acceptanceCriteria": [
+        "實作 src/api/bitfinex_client.py",
+        "實作 _generate_signature(path, nonce, body) 使用 HMAC SHA384",
+        "實作 _request(method, path, body) 發送已認證請求",
+        "實作 _request_public(path) 發送公開請求",
+        "實作 _parse_position(raw) 解析 Bitfinex 倉位格式為 Position 模型",
+        "實作 get_positions() 取得所有 ACTIVE 衍生品倉位",
+        "實作 get_derivatives_balance() 取得 deriv wallet 的 UST/USDt 可用餘額",
+        "實作 update_position_margin(symbol, delta) 調整倉位保證金",
+        "實作 close_position(symbol, side, quantity) 市價平倉",
+        "實作 get_candles(symbol, timeframe, limit) 取得 K 線資料",
+        "實作 get_full_symbol(symbol) 將 'BTC' 轉換為 'tBTCF0:USTF0'",
+        "實作 API 錯誤重試機制：最多 10 次，使用指數退避",
+        "測試 tests/test_bitfinex_client.py 全部通過（使用 mock）",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Risk Calculator 模組",
+      "description": "As a 服務, I want 根據波動率計算各幣種的風險權重 so that 保證金分配能反映實際風險",
+      "acceptanceCriteria": [
+        "實作 src/core/risk_calculator.py",
+        "實作 _calculate_volatility(prices) 計算價格序列的標準差，空或單一價格回傳 1.0",
+        "實作 _fetch_volatility(symbol) 從 API 取得歷史價格並計算波動率",
+        "實作 get_risk_weight(symbol) 優先回傳配置值，否則自動計算（以 BTC 波動率為基準正規化）",
+        "實作 calculate_target_margins(positions, total_margin) 根據風險權重計算各倉位目標保證金",
+        "實作波動率快取機制（_volatility_cache dict）",
+        "實作 clear_cache() 清除快取",
+        "支援動態計算週期：正常每 volatility_update_hours 更新，劇烈波動時每 10 分鐘",
+        "測試 tests/test_risk_calculator.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Margin Allocator 模組",
+      "description": "As a 服務, I want 計算並執行保證金重分配 so that 各倉位保證金符合風險權重",
+      "acceptanceCriteria": [
+        "實作 src/core/margin_allocator.py",
+        "定義 MarginAdjustmentPlan dataclass：symbol, current_margin, target_margin, delta, is_increase property",
+        "定義 RebalanceResult dataclass：success_count, fail_count, total_adjusted, adjustments",
+        "實作 _calculate_adjustment_plans(positions, targets) 過濾低於 min_adjustment_usdt 和 min_deviation_pct 的調整",
+        "實作 _sort_plans(plans) 先減少（釋放資金）再增加（使用資金）",
+        "實作 execute_rebalance(positions, total_margin, trigger_type) 執行重平衡並記錄到 DB",
+        "實作 emergency_rebalance(positions, critical_position, available_balance) 緊急補充保證金",
+        "測試 tests/test_margin_allocator.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Position Liquidator 模組",
+      "description": "As a 服務, I want 當整體保證金不足時自動減倉 so that 避免被交易所強制清算",
+      "acceptanceCriteria": [
+        "實作 src/core/position_liquidator.py",
+        "定義 LiquidationPlan dataclass：symbol, side, current_quantity, close_quantity, current_price, estimated_release",
+        "定義 LiquidationResult dataclass：executed, reason, plans, success_count, fail_count, total_released",
+        "實作 _calculate_margin_gap(positions, available_balance) 計算保證金缺口",
+        "實作 _sort_by_priority(positions) 按 position_priority 排序（低優先級在前）",
+        "實作 _create_liquidation_plan(position, needed_release) 限制 max_single_close_pct",
+        "實作 _check_cooldown() 檢查是否在冷卻期內",
+        "實作 execute_if_needed(positions, available_balance) 檢查並執行減倉",
+        "支援 dry_run 模式：計算計畫但不實際執行",
+        "每次減倉記錄到資料庫",
+        "測試 tests/test_position_liquidator.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Telegram Notifier 模組",
+      "description": "As a 團隊成員, I want 收到 Telegram 通知 so that 能即時掌握系統狀態和異常",
+      "acceptanceCriteria": [
+        "實作 src/notifier/telegram_bot.py",
+        "使用 python-telegram-bot 庫",
+        "實作 TelegramNotifier 類別，接收 bot_token, chat_id, enabled",
+        "實作 send_message(text) 發送一般訊息",
+        "實作 send_adjustment_report(result: RebalanceResult) 發送保證金調整報告",
+        "實作 send_liquidation_alert(result: LiquidationResult) 發送減倉警告",
+        "實作 send_daily_report(stats: dict) 發送每日統計報告",
+        "實作 send_api_error_alert(error, retry_count) 發送 API 重試失敗報警",
+        "實作 send_account_margin_warning(margin_rate) 發送帳戶保證金率預警",
+        "當 enabled=False 時所有方法為 no-op",
+        "測試 tests/test_telegram_bot.py 全部通過（使用 mock）",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Poll Scheduler 模組",
+      "description": "As a 服務, I want 定時執行保證金重平衡 so that 倉位保持最佳配置",
+      "acceptanceCriteria": [
+        "實作 src/scheduler/poll_scheduler.py",
+        "使用 asyncio 實作 PollScheduler 類別",
+        "接收依賴：config, client, risk_calculator, allocator, liquidator, notifier, db",
+        "實作 start() 開始定時執行迴圈",
+        "實作 stop() 設定停止旗標，優雅停止",
+        "實作 run_once() 執行單次重平衡流程（用於測試）",
+        "輪詢間隔使用 config.monitor.poll_interval_sec",
+        "每次執行記錄 AccountSnapshot 到資料庫",
+        "測試 tests/test_poll_scheduler.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Event Detector 模組",
+      "description": "As a 服務, I want 監控緊急事件 so that 能即時反應危險狀況",
+      "acceptanceCriteria": [
+        "實作 src/scheduler/event_detector.py",
+        "實作 EventDetector 類別，接收 config, allocator, notifier",
+        "實作 check_emergency_conditions(positions) 檢查是否有倉位低於 emergency_margin_rate，回傳危險倉位列表",
+        "實作 on_price_update(symbol, price, prev_price) 檢查價格變動是否超過 price_spike_pct",
+        "實作 check_account_margin_rate(total_equity, total_margin) 當整體保證金率低於 account_margin_rate_warning 時發送警告",
+        "觸發緊急重平衡時呼叫 notifier",
+        "測試 tests/test_event_detector.py 全部通過",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "WebSocket Client 模組",
+      "description": "As a 服務, I want 透過 WebSocket 即時接收價格更新 so that 能快速偵測價格異常",
+      "acceptanceCriteria": [
+        "實作 src/api/bitfinex_ws.py",
+        "使用 websockets 庫實作 BitfinexWebSocket 類別",
+        "實作 connect() 建立 WebSocket 連線到 config.bitfinex.ws_url",
+        "實作 subscribe(symbols) 訂閱價格更新頻道",
+        "實作智慧訂閱：只訂閱保證金率低於 emergency_margin_rate * 2 的高風險倉位",
+        "實作 update_subscriptions(positions) 根據當前倉位風險動態調整訂閱列表",
+        "實作 on_message(callback) 註冊訊息回調",
+        "實作自動重連機制：斷線後指數退避重連",
+        "實作 close() 關閉連線",
+        "測試 tests/test_bitfinex_ws.py 全部通過（使用 mock）",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Main Entry 模組",
+      "description": "As a 運維人員, I want 一個統一的進入點 so that 可以簡單啟動和停止服務",
+      "acceptanceCriteria": [
+        "實作 src/main.py",
+        "使用 argparse 支援 --config 和 --dry-run 命令列參數",
+        "實作 load_and_validate_config() 載入並驗證配置",
+        "實作 initialize_components() 初始化所有模組（Database, BitfinexClient, RiskCalculator, MarginAllocator, PositionLiquidator, TelegramNotifier, EventDetector, PollScheduler, BitfinexWebSocket）",
+        "實作 startup_checks() 啟動前檢查（API 連線測試）",
+        "實作 main() async 主迴圈：同時運行 PollScheduler 和 WebSocket 監控",
+        "捕捉 SIGINT/SIGTERM 優雅關閉，完成進行中的操作",
+        "設定 logging 根據配置檔",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Integration Tests",
+      "description": "As a 開發者, I want 端對端整合測試 so that 確保各模組協同運作正常",
+      "acceptanceCriteria": [
+        "實作 tests/test_integration.py",
+        "測試完整流程：取得倉位 → 計算目標 → 執行調整 → 記錄資料庫",
+        "測試緊急重平衡流程：低保證金率倉位觸發緊急補充",
+        "測試減倉流程：保證金缺口觸發自動減倉",
+        "測試 dry_run 模式：確認不執行寫入操作",
+        "使用 mock API 避免實際交易",
+        "所有整合測試通過",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
