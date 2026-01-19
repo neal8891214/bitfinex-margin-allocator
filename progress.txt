@@ -249,3 +249,26 @@
   - 心跳訊息格式為 `[CHANNEL_ID, "hb"]`，需特別過濾
   - 智慧訂閱使用 `emergency_margin_rate * 2` 作為高風險判斷閾值
 ---
+
+## 2026-01-19 - US-013
+- **What was implemented**: Main Entry 模組
+  - 實作 src/main.py 作為服務統一進入點
+  - 使用 argparse 支援 --config 和 --dry-run 命令列參數
+  - 實作 load_and_validate_config() 載入並驗證配置
+  - 實作 initialize_components() 初始化所有 9 個模組（Database, BitfinexClient, RiskCalculator, MarginAllocator, PositionLiquidator, TelegramNotifier, EventDetector, PollScheduler, BitfinexWebSocket）
+  - 實作 startup_checks() 啟動前檢查（DB 初始化、API 連線測試、WebSocket 連線）
+  - 實作 main() async 主迴圈：同時運行 PollScheduler 和 WebSocket 監控
+  - 實作 run_websocket_monitor() 處理價格更新回調和智慧訂閱
+  - 捕捉 SIGINT/SIGTERM 優雅關閉，使用 asyncio.Event 和 shutdown() 函數
+  - 設定 setup_logging() 根據配置檔設定 console 和 file handler
+  - 提供 run() CLI 進入點和 ServiceComponents 容器類別
+  - mypy 類型檢查通過，181 個測試全部通過
+- **Files changed**:
+  - src/main.py (new)
+- **Learnings for future iterations:**
+  - signal handler 中的 lambda 需要 `# type: ignore[misc]` 來通過 mypy
+  - asyncio.Event 用於優雅關閉：主迴圈等待 event.wait()，signal handler 設定 event.set()
+  - 使用 ServiceComponents 容器類別管理多個元件的生命週期
+  - Pydantic model 的 model_copy(update={}) 用於覆蓋部分配置（如 dry_run 模式）
+  - 啟動通知和關閉通知使用 TelegramNotifier 發送
+---
