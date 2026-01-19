@@ -272,3 +272,27 @@
   - Pydantic model 的 model_copy(update={}) 用於覆蓋部分配置（如 dry_run 模式）
   - 啟動通知和關閉通知使用 TelegramNotifier 發送
 ---
+
+## 2026-01-19 - US-014
+- **What was implemented**: Integration Tests
+  - 實作 tests/test_integration.py，共 16 個端對端整合測試
+  - 測試完整流程：取得倉位 → 計算目標 → 執行調整 → 記錄資料庫
+  - 測試緊急重平衡流程：低保證金率倉位觸發緊急補充
+  - 測試帳戶保證金率警告機制
+  - 測試減倉流程：保證金缺口觸發自動減倉、優先級排序、冷卻期
+  - 測試 dry_run 模式：確認不執行寫入操作、計畫內容正確
+  - 測試價格急漲急跌偵測
+  - 測試排程器啟動和停止
+  - 測試每日統計功能
+  - 測試空倉位情況處理
+  - 使用 mock API 避免實際交易
+  - mypy 類型檢查通過，197 個測試全部通過
+- **Files changed**:
+  - tests/test_integration.py (new)
+- **Learnings for future iterations:**
+  - 整合測試使用 `pytest_asyncio.fixture` 建立非同步 fixture
+  - 使用 `Config.model_copy(update={...})` 建立配置變體（如 dry_run 模式）
+  - 測試時禁用 Telegram 通知（`enabled=False`）避免外部依賴
+  - `:memory:` SQLite 資料庫適合用於測試，每次執行都是乾淨狀態
+  - mock client 的 `get_full_symbol` 使用 `MagicMock(side_effect=...)` 實現同步函數
+---
