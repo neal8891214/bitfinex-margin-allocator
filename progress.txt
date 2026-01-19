@@ -185,3 +185,23 @@
   - 測試時使用 `@patch("src.notifier.telegram_bot.Bot")` mock Bot 類別
   - TelegramError 是所有 Telegram API 錯誤的基類
 ---
+
+## 2026-01-19 - US-010
+- **What was implemented**: Poll Scheduler 模組
+  - 使用 asyncio 實作 PollScheduler 類別
+  - 接收依賴：config, client, risk_calculator, allocator, liquidator, notifier, db
+  - 實作 start() 開始定時執行迴圈
+  - 實作 stop() 設定停止旗標，優雅停止
+  - 實作 run_once() 執行單次重平衡流程（用於測試）
+  - 輪詢間隔使用 config.monitor.poll_interval_sec
+  - 每次執行記錄 AccountSnapshot 到資料庫
+  - 14 個測試全部通過
+- **Files changed**:
+  - src/scheduler/poll_scheduler.py (new)
+  - tests/test_poll_scheduler.py (new)
+- **Learnings for future iterations:**
+  - `sum()` 對 Decimal 需要明確起始值 `sum(gen, Decimal("0"))` 以避免 mypy 類型錯誤
+  - asyncio.Task 的類型註解為 `asyncio.Task[None]`
+  - 使用 `asyncio.CancelledError` 處理 task 取消時的例外
+  - 測試輪詢迴圈時使用小的間隔和 sleep 配合 start/stop
+---
