@@ -1,0 +1,58 @@
+# config/config.example.yaml
+
+# Bitfinex API (從環境變數讀取)
+bitfinex:
+  api_key: ${BITFINEX_API_KEY}
+  api_secret: ${BITFINEX_API_SECRET}
+  base_url: "https://api.bitfinex.com"
+  ws_url: "wss://api.bitfinex.com/ws/2"
+
+# Telegram 通知
+telegram:
+  bot_token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  enabled: true
+
+# 監控設定
+monitor:
+  poll_interval_sec: 60
+  volatility_update_hours: 1
+  volatility_lookback_days: 7
+  heartbeat_interval_sec: 300
+
+# 觸發閾值
+thresholds:
+  min_adjustment_usdt: 50
+  min_deviation_pct: 5
+  emergency_margin_rate: 2.0
+  price_spike_pct: 3.0
+  account_margin_rate_warning: 3.0
+
+# 風險權重（手動覆蓋，未列出的幣種使用自動計算）
+risk_weights:
+  BTC: 1.0
+  ETH: 1.2
+
+# 倉位優先級（減倉用，數字越大越不會被平）
+position_priority:
+  BTC: 100
+  ETH: 90
+  default: 50
+
+# 減倉設定
+liquidation:
+  enabled: true
+  require_confirmation: false
+  max_single_close_pct: 25
+  cooldown_seconds: 30
+  safety_margin_multiplier: 3.0
+  dry_run: true
+
+# 資料庫
+database:
+  path: "data/margin_balancer.db"
+
+# 日誌
+logging:
+  level: "INFO"
+  file: "logs/margin_balancer.log"
